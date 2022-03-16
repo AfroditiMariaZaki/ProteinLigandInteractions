@@ -1,0 +1,5 @@
+; position restraints for P of POPC Membrane in water
+
+[ position_restraints ]
+;  i funct       fcx        fcy        fcz
+  20    1       1000       1000       1000
