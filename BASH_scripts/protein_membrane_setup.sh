@@ -1,8 +1,8 @@
 #!/bin/bash
 
-Author: Afroditi-Maria Zaki
-Affiliation: SBCB, University of Oxford
-Last Updated: 23.03.2022
+# Author: Afroditi-Maria Zaki
+# Affiliation: SBCB, University of Oxford
+# Last Updated: 23.03.2022
 
 ###############################################################################################
 # This script embeds a protein in a pre-equilibrated POPC bilayer, solvates, adds ions,
