@@ -2,13 +2,16 @@
 
 # Author: Afroditi-Maria Zaki
 # Affiliation: SBCB, University of Oxford
-# Last Updated: 23.03.2022
+# Last Updated: 21.04.2022
 
-###############################################################################################
-# This script embeds a protein in a pre-equilibrated POPC bilayer, solvates, adds ions,
-# energy minimises and equilibrates in two steps;
-# a 5-ns NVT equilibation and a 10-ns NPT equilibration
-###############################################################################################
+#################################################################################################
+# This script can be used to setup a ligand-protein-lipid system. 
+# It requires a .pdb file for the protein and a preformed equilibrated lipid bilayer (.gro file).
+# It will concatenate the configuration files, inflate the bilayer, then gradually shrink it,
+# solvate, remove unwanted water molecules from the lipid region, add ions, energy minimise and 
+# equilibrate, first in a 5-ns NVT step and then in a 10-ns NPT step.
+#################################################################################################
+
 
 # Using the protein.pdb file, generate the protein .gro file along with the .itp and .top files
 gmx pdb2gmx -f protein.pdb -o protein.gro -ignh -ter -ff amber99sb-ildn -ss -water tip3p
@@ -23,12 +26,18 @@ echo $xdim $ydim $zdim
 # Compute the centre of the box
 halfxdim=$(echo "($xdim*0.5)" | bc)
 halfydim=$(echo "($ydim*0.5)" | bc)
-halfzdim=7.75535892
+# halfzdim was determined by visualization of the protein overlayed withthe POPC bilayer 
+# and by trial-and-error until the TMD was properly embedded in the membrane 
+halfzdim=8.15
 echo $halfxdim $halfydim $halfzdim
 
+# Align the protein along its principal axis
+echo "Protein" | gmx editconf -f protein.gro -princ -o protein_princ.gro 
+# Rotate the protein so that its principal axis is perpendicular to the membrane plane
+gmx editconf -f protein_princ.gro -rotate 0 90 0 -o protein_rotated.gro
 # Create new box with same dimensions as POPC bilayer box, and place the protein at the center of the box in the x- and y- dimensions and at the required z- coordinate
 # so that the protein TMD is embedded in the membrane
-gmx editconf -f protein.gro -o protein_newbox.gro -box ${xdim} ${ydim} ${zdim} -center ${halfxdim} ${halfydim} ${halfzdim}
+gmx editconf -f protein_rotated.gro -o protein_newbox.gro -box ${xdim} ${ydim} ${zdim} -center ${halfxdim} ${halfydim} ${halfzdim}
 
 sed '$ d' protein_newbox.gro > protein_newbox.gro.tmp
 sed '1,2d' popc.gro > popc.gro.tmp
@@ -40,6 +49,9 @@ lines=$((lines-3))
 sed -i "2s/.*/$lines/" protein_popc.gro
 sed -i "1 s/^.*/GABA RDL in POPC/" protein_popc.gro
 sed -i "$ s/^.*/$xdim $ydim $zdim/" protein_popc.gro
+
+#Renumber system molecules
+#gmx editconf -f protein_popc.gro -o system.gro -resnr 41
 
 # Make .ndx file of protein_lipid system
 echo "q" | gmx make_ndx -f protein_popc.gro
@@ -161,7 +173,10 @@ gmx grompp -f em.mdp -c system_solvated_ions.gro -p topol.top -r system_solvated
 gmx mdrun -deffnm em -v
 
 # Make an index file to include one new group that will only contain the protein and the lipids
-echo "1 | r POPC \n q" | gmx make_ndx -f em.gro 
+gmx make_ndx -f em.gro << EOF
+1 | r POPC
+q
+EOF
 
 # Perform an equilibration in the NVT ensemble for 5 ns
 gmx grompp -f nvt.mdp -c em.gro -r em.gro -p topol.top -n index.ndx -o nvt
