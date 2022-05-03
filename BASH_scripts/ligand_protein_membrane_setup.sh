@@ -14,7 +14,7 @@
 ###################################################################################################
 
 # Using the protein.pdb file, generate the protein .gro file along with the .itp and .top files
-#gmx pdb2gmx -f protein.pdb -o protein.gro -ignh -ter -ff amber99sb-ildn -ss -water tip3p
+gmx pdb2gmx -f protein.pdb -o protein.gro -ignh -ter -ff amber99sb-ildn -ss -water tip3p
 
 # Concatenate the protein and the ligand in the same box, with the protein box dimensions
 # Read the dimensions of the protein box
@@ -194,12 +194,16 @@ gmx grompp -f em.mdp -c system_solvated_ions.gro -p topol.top -r system_solvated
 gmx mdrun -deffnm em -v
 
 # Make an index file to include one new group that will only contain the protein, the ligand and the lipids
-echo "1 | r FLU | r POPC \n q" | gmx make_ndx -f em.gro 
+#echo "1 | r FLU | r POPC \n q" | gmx make_ndx -f em.gro 
+gmx make_ndx -f em.gro << EOF
+1 | r FLU | r POPC
+q
+EOF
 
 # Perform an equilibration in the NVT ensemble for 5 ns
-gmx grompp -f nvt.mdp -c em.gro -r em.gro -p topol.top -n index.ndx -o nvt
-gmx mdrun -deffnm nvt -v
+#gmx grompp -f nvt.mdp -c em.gro -r em.gro -p topol.top -n index.ndx -o nvt
+#gmx mdrun -deffnm nvt -v
 
 # Perform an equilibration in the NPT ensemble for 10 ns
-gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.top -n index.ndx -o npt
-gmx mdrun -deffnm npt -v
+#gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.top -n index.ndx -o npt
+#gmx mdrun -deffnm npt -v
