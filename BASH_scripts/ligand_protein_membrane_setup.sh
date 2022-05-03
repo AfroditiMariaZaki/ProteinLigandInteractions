@@ -2,7 +2,7 @@
 
 # Author: Afroditi-Maria Zaki
 # Affiliation: SBCB, University of Oxford
-# Last Updated: 23.03.2022
+# Last Updated: 03.05.2022
 
 ###################################################################################################
 # This script can be used to setup a ligand-protein-lipid system. 
@@ -13,6 +13,9 @@
 # equilibrate, first in a 5-ns NVT step and then in a 10-ns NPT step.
 ###################################################################################################
 
+# Using the protein.pdb file, generate the protein .gro file along with the .itp and .top files
+#gmx pdb2gmx -f protein.pdb -o protein.gro -ignh -ter -ff amber99sb-ildn -ss -water tip3p
+
 # Concatenate the protein and the ligand in the same box, with the protein box dimensions
 # Read the dimensions of the protein box
 xdim=$(cat protein.gro | awk -F ' ' '{print $1}' | awk 'END{print}')
@@ -22,7 +25,6 @@ zdim=$(cat protein.gro | awk -F ' ' '{print $3}' | awk 'END{print}')
 
 sed '$ d' protein.gro > protein.gro.tmp
 sed '1,2d' lig.gro > lig.gro.tmp
-sed -i '$ d' lig.gro.tmp
 
 cat protein.gro.tmp lig.gro.tmp > protein_lig.gro
 lines=$(wc -l < protein_lig.gro)
@@ -40,10 +42,18 @@ echo $xdim $ydim $zdim
 # Compute the centre of the box
 halfxdim=$(echo "($xdim*0.5)" | bc)
 halfydim=$(echo "($ydim*0.5)" | bc)
-halfzdim=7.75535892
+# halfzdim was determined by visualization of the protein overlayed with the POPC bilayer
+# and by trial-and-error until the TMD was properly embedded in the membrane
+halfzdim=8.15
 echo $halfxdim $halfydim $halfzdim
 
-gmx editconf -f protein_lig.gro -o protein_lig_newbox.gro -box ${xdim} ${ydim} ${zdim} -center ${halfxdim} ${halfydim} ${halfzdim}
+# Align the protein along its principal axis
+echo "Protein" | gmx editconf -f protein_lig.gro -princ -o protein_lig_princ.gro
+# Rotate the protein so that its principal axis is perpendicular to the membrane plane
+gmx editconf -f protein_lig_princ.gro -rotate 0 -90 0 -o protein_lig_rotated.gro
+# Create new box with same dimensions as POPC bilayer box
+# and place the protein at the center of the box in the x- and y- dimensions and at the required z- coordinate
+gmx editconf -f protein_lig_rotated.gro -o protein_lig_newbox.gro -box ${xdim} ${ydim} ${zdim} -center ${halfxdim} ${halfydim} ${halfzdim} 
 
 sed '$ d' protein_lig_newbox.gro > protein_lig_newbox.gro.tmp
 sed '1,2d' popc.gro > popc.gro.tmp
@@ -74,6 +84,7 @@ rm topol.top
 echo "; Include forcefield parameters
 #include \"amber99sb-ildn.ff/forcefield.itp\"
 #include \"./SLipids_2016/forcefield.ff/forcefield.itp\"
+#include \"FLU_GMX.itp\"
 
 " > topol.top
 
@@ -86,9 +97,16 @@ do
 #ifdef STRONG_POSRES
 #include \"strong_posre_chain_$i.itp\"
 #endif
-  
+
 " >> topol.top
 done
+
+echo "; Strong position restraints for Ligand for InflateGRO
+#ifdef STRONG_POSRES
+#include \"strong_posre_flu.itp\"
+#endif
+
+" >> topol.top
 
 echo "; Include lipid topology
 #include \"POPC.itp\"
@@ -112,7 +130,9 @@ echo "; Include lipid topology
 
 [ system ]
 ; Name
-Protein in POPC" >> topol.top
+Protein/ligand complex in POPC in water
+
+" >> topol.top
 
 echo "[ molecules ]
 ; Compound        #mols
@@ -121,12 +141,13 @@ Protein_chain_B     1
 Protein_chain_C     1
 Protein_chain_D     1
 Protein_chain_E     1
+FLU		    1
 POPC              512" >> topol.top
 
 rm \#*
 
 # Generate system box and place protein_lipid system in the center      
-gmx editconf -f protein_popc.gro -o system.gro -box $xdim $ydim  14.5 -center $halfxdim $halfydim 5
+gmx editconf -f protein_lig_popc.gro -o system.gro -box $xdim $ydim  14.5 -center $halfxdim $halfydim 5
 
 # Use script to inflate lipid membrane
 perl inflategro.pl system.gro 4 POPC 14 system_inflated.gro 5 area.dat > inflate.log
@@ -172,8 +193,8 @@ echo "SOL" | gmx genion -s ions.tpr -o system_solvated_ions.gro -p topol.top -pn
 gmx grompp -f em.mdp -c system_solvated_ions.gro -p topol.top -r system_solvated_ions.gro -o em
 gmx mdrun -deffnm em -v
 
-# Make an index file to include one new group that will only contain the protein and the lipids
-echo "1 | r POPC \n q" | gmx make_ndx -f em.gro 
+# Make an index file to include one new group that will only contain the protein, the ligand and the lipids
+echo "1 | r FLU | r POPC \n q" | gmx make_ndx -f em.gro 
 
 # Perform an equilibration in the NVT ensemble for 5 ns
 gmx grompp -f nvt.mdp -c em.gro -r em.gro -p topol.top -n index.ndx -o nvt
